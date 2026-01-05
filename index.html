@@ -1,0 +1,169 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Tetris na unha</title>
+    <style>
+      body { margin: 0; background: #000; }
+      canvas { display: block; background: #111; }
+    </style>
+  </head>
+  <body>
+    <!-- IMPORTANTE: o id tem que ser exatamente "game" -->
+    <canvas id="game"></canvas>
+
+    <!-- IMPORTANTE: script depois do canvas -->
+    <script>
+      const canvas = document.getElementById("game");
+      const ctx = canvas.getContext("2d");
+
+      // --- GRID ---
+      const COLS = 10;
+      const ROWS = 20;
+      const CELL = 30;
+
+      canvas.width = COLS * CELL;
+      canvas.height = ROWS * CELL;
+
+      // --- BOARD ---
+      const board = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+
+      // --- INPUT (edge) ---
+      const down = new Set();
+      const pressed = new Set();
+
+      window.addEventListener("keydown", (e) => {
+        if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," "].includes(e.key)) e.preventDefault();
+        if (!down.has(e.key)) pressed.add(e.key);
+        down.add(e.key);
+      });
+
+      window.addEventListener("keyup", (e) => {
+        down.delete(e.key);
+      });
+
+      // --- PIECE I (4x4) ---
+      const I_SHAPE = [
+        [0,0,0,0],
+        [1,1,1,1],
+        [0,0,0,0],
+        [0,0,0,0],
+      ];
+
+      function clone4(shape) { return shape.map(row => row.slice()); }
+
+      const active = { c: 3, r: 0, shape: clone4(I_SHAPE) };
+
+      function collides(shape, baseC, baseR) {
+        for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) {
+          if (!shape[r][c]) continue;
+          const gc = baseC + c, gr = baseR + r;
+          if (gc < 0 || gc >= COLS || gr < 0 || gr >= ROWS) return true;
+          if (board[gr][gc]) return true;
+        }
+        return false;
+      }
+
+      function tryMoveActive(dc, dr) {
+        const nc = active.c + dc, nr = active.r + dr;
+        if (collides(active.shape, nc, nr)) return false;
+        active.c = nc; active.r = nr; return true;
+      }
+
+      function rotateCW(shape) {
+        const out = Array.from({ length: 4 }, () => Array(4).fill(0));
+        for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) out[c][3 - r] = shape[r][c];
+        return out;
+      }
+
+      function tryRotateCW() {
+        const rotated = rotateCW(active.shape);
+        if (!collides(rotated, active.c, active.r)) { active.shape = rotated; return true; }
+        if (!collides(rotated, active.c - 1, active.r)) { active.c -= 1; active.shape = rotated; return true; }
+        if (!collides(rotated, active.c + 1, active.r)) { active.c += 1; active.shape = rotated; return true; }
+        return false;
+      }
+
+      function lockActiveToBoard() {
+        for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) {
+          if (!active.shape[r][c]) continue;
+          const gr = active.r + r, gc = active.c + c;
+          if (gr >= 0 && gr < ROWS && gc >= 0 && gc < COLS) board[gr][gc] = 1;
+        }
+      }
+
+      function clearLines() {
+        for (let r = ROWS - 1; r >= 0; r--) {
+          let full = true;
+          for (let c = 0; c < COLS; c++) if (!board[r][c]) { full = false; break; }
+          if (full) { board.splice(r, 1); board.unshift(Array(COLS).fill(0)); r++; }
+        }
+      }
+
+      function spawnI() { active.shape = clone4(I_SHAPE); active.c = 3; active.r = 0; }
+
+      let fallTimer = 0, dtLast = 0;
+      const FALL_INTERVAL = 0.5;
+
+      function update(dt) {
+        dtLast = dt;
+        fallTimer += dt;
+
+        const left  = pressed.has("ArrowLeft")  || pressed.has("a") || pressed.has("A");
+        const right = pressed.has("ArrowRight") || pressed.has("d") || pressed.has("D");
+        const rot   = pressed.has("ArrowUp")    || pressed.has("w") || pressed.has("W") || pressed.has(" ");
+        const soft  = pressed.has("ArrowDown")  || pressed.has("s") || pressed.has("S");
+
+        if (left)  tryMoveActive(-1, 0);
+        if (right) tryMoveActive( 1, 0);
+        if (rot)   tryRotateCW();
+        if (soft)  tryMoveActive(0, 1);
+
+        if (fallTimer >= FALL_INTERVAL) {
+          fallTimer -= FALL_INTERVAL;
+          if (!tryMoveActive(0, 1)) {
+            lockActiveToBoard();
+            clearLines();
+            spawnI();
+          }
+        }
+      }
+
+      function drawGrid() {
+        ctx.strokeStyle = "#222";
+        for (let c = 0; c <= COLS; c++) { ctx.beginPath(); ctx.moveTo(c*CELL+0.5,0); ctx.lineTo(c*CELL+0.5,canvas.height); ctx.stroke(); }
+        for (let r = 0; r <= ROWS; r++) { ctx.beginPath(); ctx.moveTo(0,r*CELL+0.5); ctx.lineTo(canvas.width,r*CELL+0.5); ctx.stroke(); }
+      }
+
+      function drawBoard() {
+        ctx.fillStyle = "#555";
+        for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (board[r][c]) ctx.fillRect(c*CELL, r*CELL, CELL, CELL);
+      }
+
+      function drawActive() {
+        ctx.fillStyle = "white";
+        for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) if (active.shape[r][c]) ctx.fillRect((active.c+c)*CELL, (active.r+r)*CELL, CELL, CELL);
+      }
+
+      function drawHUD() {
+        ctx.fillStyle = "lime";
+        ctx.font = "14px monospace";
+        ctx.fillText(`dt: ${dtLast.toFixed(4)}`, 10, 20);
+      }
+
+      function render() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawGrid(); drawBoard(); drawActive(); drawHUD();
+      }
+
+      let last = performance.now();
+      function loop(now) {
+        const dt = (now - last) / 1000; last = now;
+        update(dt); render();
+        pressed.clear();
+        requestAnimationFrame(loop);
+      }
+      requestAnimationFrame(loop);
+    </script>
+  </body>
+</html>
