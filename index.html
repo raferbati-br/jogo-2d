@@ -49,10 +49,56 @@
         [0,0,0,0],
         [0,0,0,0],
       ];
+      const T_SHAPE = [
+        [0,0,0,0],
+        [0,1,0,0],
+        [1,1,1,0],
+        [0,0,0,0],
+      ];
+      const O_SHAPE = [
+        [0,0,0,0],
+        [0,1,1,0],
+        [0,1,1,0],
+        [0,0,0,0],
+      ];
+      const S_SHAPE = [
+        [0,0,0,0],
+        [0,1,1,0],
+        [1,1,0,0],
+        [0,0,0,0],
+      ];
+      const Z_SHAPE = [
+        [0,0,0,0],
+        [1,1,0,0],
+        [0,1,1,0],
+        [0,0,0,0],
+      ];
+      const L_SHAPE = [
+        [0,0,0,0],
+        [0,0,1,0],
+        [1,1,1,0],
+        [0,0,0,0],
+      ];
+      const J_SHAPE = [
+        [0,0,0,0],
+        [1,0,0,0],
+        [1,1,1,0],
+        [0,0,0,0],
+      ];
 
       function clone4(shape) { return shape.map(row => row.slice()); }
 
-      const active = { c: 3, r: 0, shape: clone4(I_SHAPE) };
+      const COLORS = {
+        I: "#4dd9ff",
+        T: "#a277ff",
+        O: "#ffd85a",
+        S: "#59d27c",
+        Z: "#ff6b6b",
+        L: "#ffb45a",
+        J: "#5a7bff",
+      };
+
+      const active = { c: 3, r: 0, shape: clone4(I_SHAPE), id: "I" };
 
       function collides(shape, baseC, baseR) {
         for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) {
@@ -88,21 +134,38 @@
         for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) {
           if (!active.shape[r][c]) continue;
           const gr = active.r + r, gc = active.c + c;
-          if (gr >= 0 && gr < ROWS && gc >= 0 && gc < COLS) board[gr][gc] = 1;
+          if (gr >= 0 && gr < ROWS && gc >= 0 && gc < COLS) board[gr][gc] = active.id;
         }
       }
 
       function clearLines() {
+        let cleared = 0;
         for (let r = ROWS - 1; r >= 0; r--) {
           let full = true;
           for (let c = 0; c < COLS; c++) if (!board[r][c]) { full = false; break; }
-          if (full) { board.splice(r, 1); board.unshift(Array(COLS).fill(0)); r++; }
+          if (full) { board.splice(r, 1); board.unshift(Array(COLS).fill(0)); r++; cleared++; }
         }
+        return cleared;
       }
 
-      function spawnI() { active.shape = clone4(I_SHAPE); active.c = 3; active.r = 0; }
+      function spawnRandom() {
+        const bag = [
+          ["I", I_SHAPE],
+          ["T", T_SHAPE],
+          ["O", O_SHAPE],
+          ["S", S_SHAPE],
+          ["Z", Z_SHAPE],
+          ["L", L_SHAPE],
+          ["J", J_SHAPE],
+        ];
+        const pick = bag[Math.floor(Math.random() * bag.length)];
+        active.id = pick[0];
+        active.shape = clone4(pick[1]);
+        active.c = 3; active.r = 0;
+      }
 
       let fallTimer = 0, dtLast = 0;
+      let score = 0;
       const FALL_INTERVAL = 0.5;
 
       function update(dt) {
@@ -123,8 +186,9 @@
           fallTimer -= FALL_INTERVAL;
           if (!tryMoveActive(0, 1)) {
             lockActiveToBoard();
-            clearLines();
-            spawnI();
+            const lines = clearLines();
+            if (lines > 0) score += lines * 100;
+            spawnRandom();
           }
         }
       }
@@ -135,20 +199,44 @@
         for (let r = 0; r <= ROWS; r++) { ctx.beginPath(); ctx.moveTo(0,r*CELL+0.5); ctx.lineTo(canvas.width,r*CELL+0.5); ctx.stroke(); }
       }
 
+      function drawCell(c, r, color) {
+        const x = c * CELL;
+        const y = r * CELL;
+        ctx.fillStyle = color;
+        ctx.fillRect(x, y, CELL, CELL);
+        const grad = ctx.createLinearGradient(x, y, x, y + CELL);
+        grad.addColorStop(0, "rgba(255,255,255,0.28)");
+        grad.addColorStop(0.45, "rgba(255,255,255,0.06)");
+        grad.addColorStop(1, "rgba(0,0,0,0.10)");
+        ctx.fillStyle = grad;
+        ctx.fillRect(x + 1, y + 1, CELL - 2, CELL - 2);
+        ctx.strokeStyle = "rgba(0,0,0,0.45)";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x + 1, y + 1, CELL - 2, CELL - 2);
+      }
+
+
       function drawBoard() {
-        ctx.fillStyle = "#555";
-        for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (board[r][c]) ctx.fillRect(c*CELL, r*CELL, CELL, CELL);
+        for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+          const cell = board[r][c];
+          if (!cell) continue;
+          drawCell(c, r, COLORS[cell] || "#555");
+        }
       }
 
       function drawActive() {
-        ctx.fillStyle = "white";
-        for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) if (active.shape[r][c]) ctx.fillRect((active.c+c)*CELL, (active.r+r)*CELL, CELL, CELL);
+        const color = COLORS[active.id] || "white";
+        for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) {
+          if (!active.shape[r][c]) continue;
+          drawCell(active.c + c, active.r + r, color);
+        }
       }
 
       function drawHUD() {
         ctx.fillStyle = "lime";
         ctx.font = "14px monospace";
-        ctx.fillText(`dt: ${dtLast.toFixed(4)}`, 10, 20);
+        ctx.fillText(`score: ${score}`, 10, 20);
+        ctx.fillText(`dt: ${dtLast.toFixed(4)}`, 10, 38);
       }
 
       function render() {
@@ -163,6 +251,7 @@
         pressed.clear();
         requestAnimationFrame(loop);
       }
+      spawnRandom();
       requestAnimationFrame(loop);
     </script>
   </body>
